@@ -6,6 +6,7 @@ from abc import ABCMeta, abstractmethod
 import inject
 import paho.mqtt.client as mqtt
 import rospy
+import copy
 
 from .util import lookup_object, extract_values, populate_instance
 
@@ -101,10 +102,27 @@ class AlternativeFlightPlanRosToMqttBridge(Bridge):
             self._last_published = now
 
     def _publish(self, msg):
-        payload = bytearray(self._serialize(extract_values(msg)))
+        msg_dict = extract_values(msg)
+        new_msg_dict = copy.deepcopy(msg_dict)
+        
+        payload = bytearray(self._custom_json_dumps(new_msg_dict))
         aux_topic_to = self._topic_to + str(msg.icao)
-        self._mqtt_client.publish(topic=self._topic_to, payload=payload, qos=2)
+        self._mqtt_client.publish(topic=aux_topic_to, payload=payload, qos=2)
 
+    def _custom_json_dumps(self, msg_dict):
+        json_converted_msg = "{ 'icao': '" + str(msg_dict['icao']) + "',\n'flight_plan_id': '" + msg_dict['flight_plan_id'] + "',\n'new_flight_plan': ["
+        flight_plan_size = len(msg_dict['new_flight_plan'])
+        for index in range(flight_plan_size):
+            json_converted_msg += "[" + str(msg_dict['new_flight_plan'][index]['waypoint_elements'][0]) + ","
+            json_converted_msg += str(msg_dict['new_flight_plan'][index]['waypoint_elements'][1]) + ","
+            json_converted_msg += str(msg_dict['new_flight_plan'][index]['waypoint_elements'][2]) + ","
+            json_converted_msg += str(msg_dict['new_flight_plan'][index]['waypoint_elements'][3]) + "]"
+            if index < (flight_plan_size-1):
+                json_converted_msg += ",\n"
+            else:
+                json_converted_msg += "]\n"            
+        json_converted_msg += "}\n"
+        return json_converted_msg
 
 class MqttToRosBridge(Bridge):
     u""" Bridge from MQTT to ROS topic
