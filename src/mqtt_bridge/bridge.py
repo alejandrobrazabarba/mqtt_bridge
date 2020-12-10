@@ -124,6 +124,44 @@ class AlternativeFlightPlanRosToMqttBridge(Bridge):
         json_converted_msg += "}\n"
         return json_converted_msg
 
+class UTMAlertRosToMqttBridge(Bridge):
+    u""" Bridge from ROS topic to MQTT
+
+    :param str topic_from: incoming ROS topic path
+    :param str topic_to: outgoing MQTT topic path
+    :param class msg_type: subclass of ROS Message
+    :param (float|None) frequency: publish frequency
+    """
+
+    def __init__(self, topic_from, topic_to, msg_type, frequency=None):
+        self._topic_from = topic_from
+        self._topic_to = self._extract_private_path(topic_to)
+        self._last_published = rospy.get_time()
+        self._interval = 0 if frequency is None else 1.0 / frequency
+        rospy.Subscriber(topic_from, msg_type, self._callback_ros)
+
+    def _callback_ros(self, msg):
+        rospy.logdebug("ROS received from {}".format(self._topic_from))
+        now = rospy.get_time()
+        if now - self._last_published > self._interval:
+            self._publish(msg)
+            self._last_published = now
+
+    def _publish(self, msg):
+        msg_dict = extract_values(msg)
+        new_msg_dict = copy.deepcopy(msg_dict)
+        payload = bytearray(self._custom_json_dumps(new_msg_dict))
+        self._mqtt_client.publish(topic=self._topic_to, payload=payload, qos=2)
+
+    def _custom_json_dumps(self, msg_dict):
+        json_converted_msg = "{\n'icao': '" + str(msg_dict['icao']) + "',\n'alert_title': '" + msg_dict['alert_title'] + "',\n"
+        json_converted_msg += "'alert_id': '" + msg_dict['alert_id'] + "',\n" + "'alert_message': '" + msg_dict['alert_message'] + "',\n"
+        json_converted_msg += "'alert_wp': [" + str(msg_dict['alert_wp']['waypoint_elements'][0]) + "," + str(msg_dict['alert_wp']['waypoint_elements'][1]) + ","
+        json_converted_msg += str(msg_dict['alert_wp']['waypoint_elements'][2]) + "," + str(msg_dict['alert_wp']['waypoint_elements'][3]) + "]\n"
+        
+        json_converted_msg += "}\n"
+        return json_converted_msg
+
 class MqttToRosBridge(Bridge):
     u""" Bridge from MQTT to ROS topic
 
